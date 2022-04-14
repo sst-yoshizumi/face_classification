@@ -168,50 +168,57 @@ def watchdog_ledoff(sem, f):
 #################################################
 # メイン処理
 #################################################
-strip = init()      # NeoPixel の初期化、オブジェクト生成
-# 感情検出プロセスから感情データを受け取るFIFOを生成。
-fifopath = os.path.join('/home/pi/smartlife', 'emotionflowerfifo')
-if os.path.isfile(fifopath) == True:
-    os.remove(fifopath)
-os.mkfifo(fifopath, 0o666)
-os.chmod(fifopath, 0o666)
+def main():
+    strip = init()      # NeoPixel の初期化、オブジェクト生成
+    # 感情検出プロセスから感情データを受け取るFIFOを生成。
+    fifopath = os.path.join('/home/pi/smartlife', 'emotionflowerfifo')
+    if os.path.isfile(fifopath) == True:
+        os.remove(fifopath)
+    os.mkfifo(fifopath, 0o666)
+    os.chmod(fifopath, 0o666)
 
-# 一定時間感情を検出しなければ、消灯命令を出すスレッドを起動します。
-watchdog = 0
-sem = threading.Semaphore(1)
-watchdog_thread = threading.Thread(target=watchdog_ledoff, args=(sem, fifopath))
-print("Starting WDT thread")
-watchdog_thread.start()
+    # 一定時間感情を検出しなければ、消灯命令を出すスレッドを起動します。
+    watchdog = 0
+    sem = threading.Semaphore(1)
+    watchdog_thread = threading.Thread(target=watchdog_ledoff, args=(sem, fifopath))
+    print("Starting WDT thread")
+    watchdog_thread.start()
 
-# 感情データを受信して NeoPixel を制御するメインループ処理
-while True:
-    with open(fifopath, "rb") as fifo:
-        read_line = fifo.read()
+    # 感情データを受信して NeoPixel を制御するメインループ処理
+    while True:
+        with open(fifopath, "rb") as fifo:
+            read_line = fifo.read()
 
-    if len(read_line) <= 0:
-#            print("no data")
-        break
-#        print("read_line=", read_line)
+        if len(read_line) <= 0:
+    #            print("no data")
+            break
+    #        print("read_line=", read_line)
 
-    # 一定期間感情を認識しなかったら LED をすべて消灯します。
-    if read_line[:len(ALL_OFF_COMMAND)] == ALL_OFF_COMMAND:
-        all_led_off(strip)
-        continue
-    watchdog_reset(sem)
+        # 一定期間感情を認識しなかったら LED をすべて消灯します。
+        if read_line[:len(ALL_OFF_COMMAND)] == ALL_OFF_COMMAND:
+            all_led_off(strip)
+            continue
+        watchdog_reset(sem)
 
-    emotions = deserialize(read_line)
-#        print("emotions=", emotions)
-    if emotions[0] == 99.99:   # 終了コードを受信
-        watchdog_set(sem, -1)  # スレッドに終了を知らせます。
-        break
+        emotions = deserialize(read_line)
+    #        print("emotions=", emotions)
+        if emotions[0] == 99.99:   # 終了コードを受信
+            watchdog_set(sem, -1)  # スレッドに終了を知らせます。
+            break
 
-    # LED データを作成して、NeoPixel を制御します。
-    leds = make_led_data(emotions)
-    print("leds = ", leds)
-    show(strip, leds)
+        # LED データを作成して、NeoPixel を制御します。
+        leds = make_led_data(emotions)
+        print("leds = ", leds)
+        show(strip, leds)
 
-# 終了処理
-watchdog_thread.join()      # ウォッチドッグスレッドが終了するのを待ちます。
-all_led_off(strip)          # 終了時はすべて消灯します。
-os.remove(fifopath)         # FIFO を削除します。
-print("flower_neopixel end.")
+    # 終了処理
+    watchdog_thread.join()      # ウォッチドッグスレッドが終了するのを待ちます。
+    all_led_off(strip)          # 終了時はすべて消灯します。
+    os.remove(fifopath)         # FIFO を削除します。
+    print("flower_neopixel end.")
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
