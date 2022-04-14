@@ -24,6 +24,9 @@ import requests
 import time
 from datetime import datetime as dt
 
+# ADD yoshizumi
+from flower_neopixel import start_flower, output_flower
+
 # parameters for loading data and images
 detection_model_path = '../trained_models/detection_models/haarcascade_frontalface_default.xml'
 emotion_model_path = '../trained_models/emotion_models/fer2013_mini_XCEPTION.102-0.66.hdf5'
@@ -97,6 +100,7 @@ emotion_target_size = emotion_classifier.input_shape[1:3]
 # starting lists for calculating modes
 emotion_window = []
 
+led_object = start_flower()                             # NeoPixel LED を初期化
 reset_emotion_sum()                                     # 感情和リストをリセット
 time_before = time.time()                               # ループ直前の時刻を保存（デバッグ用）
 
@@ -184,6 +188,10 @@ while True:
         time_now = time.time()
         print("time span: ", (time_now - time_before))   # 前回からの経過時間
         time_before = time_now
+
+        # LED 点灯：表情認識1回ごとにLEDの色を変えるとチカチカすると思いますが、
+        # まずは LED が光ることの確認です。
+        output_flower(led_object, emotion_prediction[0])
 
         # add_emotion_rate(emotion_prediction)        # 感情の確率を加算する
         # if (sum_count >= ANALYZE_COUNT):            # 感情検出回数が一定数たまったら LED に出力する
