@@ -157,7 +157,7 @@ def watchdog_ledoff(sem, f):
             break
         watchdog_increment(sem)
         print("WDT:", watchdog)
-        if watchdog >= 5:
+        if watchdog >= 100:
             print("WDT: Send command")
             watchdog_reset(sem)
             with open(f, "wb") as fifo:
