@@ -109,9 +109,13 @@ cv2.namedWindow('window_frame')
 video_capture = cv2.VideoCapture(0)
 while True:
     bgr_image = video_capture.read()[1]
+    # check debug
+    print("video_capture.read()")
     gray_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
     rgb_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
     faces = detect_faces(face_detection, gray_image)
+    # check debug
+    print("detect_faces()")
 
     for face_coordinates in faces:
 
