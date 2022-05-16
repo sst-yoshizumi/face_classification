@@ -104,18 +104,20 @@ time_before = time.time()                               # ループ直前の時�
 #fifopath = os.path.join('/home/pi/smartlife', 'emotionflowerfifo')
 # os.mkfifo(fifopath, 0666)
 
+counter = 0     # debug
+
 # starting video streaming
 cv2.namedWindow('window_frame')
 video_capture = cv2.VideoCapture(0)
 while True:
     bgr_image = video_capture.read()[1]
     # check debug
-    print("video_capture.read()")
+    print(f"{counter}: video_capture.read()")
     gray_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
     rgb_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
     faces = detect_faces(face_detection, gray_image)
     # check debug
-    print("detect_faces()")
+    print(f"{counter}: detect_faces() faces = {len(faces)}")
 
     for face_coordinates in faces:
 
