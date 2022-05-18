@@ -29,6 +29,8 @@ class HeartBeat:
         ハートビート通知するときに呼び出すこと。
         呼び出された時の時刻を保存する。
         """
+        diff = self.__calc_time_span()          # debug
+        print(f"HeartBeat diff: {diff}")        # debug
         HeartBeat.last_timestamp = time.time()
 
     def __calc_time_span(self):
