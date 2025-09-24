@@ -51,13 +51,13 @@ class Emotion:
         self.__queue_emotions.append(new_emotion)
         self.__queue_emotions = self.__queue_emotions[-self.__accum_count:]
 
-    def __sum_emotions(self):
+    def sum_emotions(self):
         """
         指定回数分取っておいた感情データで、
         感情ごとにデータを合計したリストを返します。
         """
         sum = [0.0] * EMOTION_NUM
-#        print(f"__sum_emotions: {len(self.__queue_emotions)}")
+#        print(f"sum_emotions: {len(self.__queue_emotions)}")
 #        print(self.__queue_emotions)
 #        print("\n")
         for emotions in self.__queue_emotions:
@@ -72,7 +72,7 @@ class Emotion:
         戻り値は (int, double) 型のタプル。 (感情の番号, 感情の大きさ)
         感情の大きさは、全感情の合計からの割合としていますが、動作を見ながら調整した方が良いと思います。
         """
-        emotions = self.__sum_emotions()
+        emotions = self.sum_emotions()
         largest_emotion = max(emotions)
         largest_index = emotions.index(largest_emotion)
         total = sum(emotions)

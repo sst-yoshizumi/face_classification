@@ -35,3 +35,15 @@ def get_colors(num_classes):
     colors = np.asarray(colors) * 255
     return colors
 
+
+def draw_circle(face_coordinates, image_array, color):
+    x, y, w, h = face_coordinates[:4]
+
+    # Calculate center
+    center = (int(x + w / 2), int(y + h / 2))
+
+    # Calculate radius
+    radius = int(0.5 * np.sqrt(w**2 + h**2))
+
+    # Draw cirle
+    cv2.circle(image_array, center, radius, color, thickness=-1)
