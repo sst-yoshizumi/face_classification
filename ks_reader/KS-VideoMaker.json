@@ -1,0 +1,21 @@
+{
+    "input_file": "../data/2025-09-26-15-31-10-630-00－二回目.csv",
+    "output_video_file": "../data/emotion_video.mp4",
+    "fps": 8,
+    "max_frame_size": [1080, 768],
+    "play_after_creation": true,
+    "rectangle_thickness": 4,
+    "background_color_bgr": [80, 60, 50],
+    "expression_colors_bgr": {
+        "anger": [0, 0, 255],
+        "sadness": [255, 0, 0],
+        "joy": [0, 255, 255],
+        "surprise": [255, 255, 0],
+        "disgust": [255, 0, 255],
+        "fear": [0, 255, 0],
+        "contempt": [128, 0, 128],
+        "sentimentality": [203, 192, 255],
+        "confusion": [128, 128, 128],
+        "neutral": [255, 255, 255]
+    }
+}
