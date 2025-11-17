@@ -1,7 +1,13 @@
 import pandas as pd
 import numpy as np
+# CUI で動作させる場合、 matplotlib のバックエンドを 'Agg' に設定します。
+# import matplotlib
+# matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import json
 import cv2
+from io import BytesIO
 
 # 表情データを時系列に記録した CSV ファイルを読み込み、
 # 顔の座標データの長方形を、表情に対応した色で表現し、動画を生成します。
@@ -146,12 +152,72 @@ def draw_legend(frame, config):
     return frame
 
 
-def create_video(df, frame_size, config):
+def draw_emotion_ratio_graph(frame, position, df_ratio_row, expression_colors):
+    '''
+    各時刻における感情割合を積み上げ横棒グラフで表示します。
+
+    Parameters:
+        frame (np.ndarray): 動画フレーム
+        position (tuple): グラフの表示位置 (x, y)
+        df_ratio_row (pd.DataFrame): 各時刻における感情割合のデータフレームの1行
+        expression_colors (dict): 表情に対応した色 (BGR)
+
+    Returns:
+        np.ndarray: グラフを描画したフレーム
+    '''
+    # df_ratio_row が Series 型の場合、 tolist() は使えないため、 DataFrame に変換します。
+    if isinstance(df_ratio_row, pd.Series):
+        df_ratio_row = df_ratio_row.to_frame().T
+    emotion_columns = df_ratio_row.columns.tolist()
+    
+    # グラフのサイズを frame の横幅の 50%、高さは 5% に合わせます。
+    fig, ax = plt.subplots(figsize=(6, 1))
+    plt.subplots_adjust(left=0.2, right=0.95, top=0.8, bottom=0.2)
+
+    # 積み上げ横棒グラフを描画
+    df_ratio_row[emotion_columns].T.plot(
+        kind='barh',
+        stacked=True,
+        ax=ax,
+        colormap=expression_colors,
+        legend=False
+    )
+    plt.tight_layout()
+
+    # 積み上げ横棒グラフを frame の position に描画
+    # 画像として保存（メモリ上）
+    buf = BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
+
+    # OpenCV で読み込み
+    img_array = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+    graph_img = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)  # RGBA
+    h, w = graph_img.shape[:2]
+    
+    # グラフ画像を frame に合成（αチャンネル対応）
+    if graph_img.shape[2] == 4:
+        # RGBA → BGR + αマスク
+        bgr = graph_img[:, :, :3]
+        alpha = graph_img[:, :, 3] / 255.0
+
+        y, x = position[1], position[0]
+        for c in range(3):
+            frame[y:y+h, x:x+w, c] = (1 - alpha) * frame[y:y+h, x:x+w, c] + alpha * bgr[:, :, c]
+    else:
+        frame[y:y+h, x:x+w] = graph_img
+
+    return frame
+
+
+def create_video(df, df_ratio, frame_size, config):
     '''
     df のデータを元に動画を作成します。
     
     Parameters:
         df (pd.DataFrame): CSV ファイルのデータフレーム
+        df_ratio (pd.DataFrame): 表情の割合を含むデータフレーム
         frame_size (tuple): フレームサイズ (width, height)
         config (dict): 設定データ
     
@@ -165,15 +231,20 @@ def create_video(df, frame_size, config):
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 'mp4v' は MP4 フォーマット用
     video_writer = cv2.VideoWriter(config['output_video_file'], fourcc, config['fps'], frame_size)
 
+    # expression_colors の値（BGR）を RGB に変換し、matplotlib 用カラーマップを作成
+    color_list = [tuple([c/255 for c in config['expression_colors_bgr'][emotion][::-1]]) for emotion in config['expression_colors_bgr']]
+    cmap = mcolors.ListedColormap(color_list)
+
     time_stamps = df['time stamp'].unique()
 
     # 作成中、進行状況を表示
     total_frames = len(time_stamps)
     print(f'Creating video with {total_frames} frames...')
-    print_interval = max(1, total_frames // 10)  # 10% ごとに表示
+    print_interval = max(1, total_frames // 5)  # 5% ごとに表示
 
     # 各フレームを生成
     for i, time_stamp in enumerate(time_stamps):
+        # 進行状況を表示
         if i % print_interval == 0:
             print(f'Progress: {i}/{total_frames} frames ({(i/total_frames)*100:.1f}%)')
 
@@ -214,6 +285,14 @@ def create_video(df, frame_size, config):
             # フレームの下段に表情の色の凡例を表示
             frame = draw_legend(frame, config)
 
+        # 感情割合グラフを表示
+        # time_stamp が無い場合は KeyError になりますが、 df_ratio の index に time_stamp が存在する前提です。
+        # df_ratio_row は Series 型（1行だけ該当）
+        ratio_row = df_ratio.loc[time_stamp]
+        # カラムデータがすべて NaN の場合は何もしません。
+        if not ratio_row.isnull().all():
+            frame = draw_emotion_ratio_graph(frame, (50, 10), ratio_row, cmap)
+
         # フレームを動画に追加
         video_writer.write(frame)
 
@@ -221,17 +300,52 @@ def create_video(df, frame_size, config):
     cv2.destroyAllWindows()
 
 
+def calc_expression_proportions(df, expression_colors):
+    '''
+    各時刻における表情の割合を計算します。
+    同時刻に複数の表情データがある場合は、それらを合計して割合を求めます。
+    
+    Parameters:
+        df (pd.DataFrame): CSV ファイルのデータフレーム
+        expression_colors (dict): 表情の色設定データ
+    
+    Returns:
+        pd.DataFrame: 各時刻における全員の表情の割合のデータフレーム
+    '''
+    # 感情データの種類
+#    emotion_columns = ['anger','contempt','disgust','fear','joy','sadness','surprise','sentimentality','confusion','neutral']
+    emotion_columns = [emotion for emotion, color in expression_colors.items()]
+
+    # time stamp と emotion_columns のみを抽出します。
+    df_sum = df[['time stamp'] + emotion_columns].copy()
+
+    # 同時刻に複数の表情データがある場合は、それらを表情ごとに合計します。
+    df_sum = df_sum.groupby('time stamp')[emotion_columns].sum()
+
+    # 感情の割合を計算します。
+    df_ratio = df_sum.div(df_sum.sum(axis=1), axis=0)
+    # time stamp 以外の表情を表すヘッダにサフィックスを付けます。
+#    df_ratio = df_ratio.add_suffix('_ratio')
+#    df_ratio.rename(columns=lambda x: x + '_ratio' if x != 'time stamp' else x, inplace=True)
+
+    return df_ratio
+
+
 def main():
     # 設定を外部ファイルから読み出します。
     config = read_config('./KS-VideoMaker.json')
     expression_colors = config['expression_colors_bgr']
 
+    print('input file = ', config['input_file'])
     # CSV ファイルを読み込み
     df = pd.read_csv(config['input_file'])
 
-   # df から使わない列を削除
+    # df から使わない列を削除
     columns_to_keep = ['time stamp', 'face id', 'topleft_x', 'topleft_y', 'bottomright_x', 'bottomright_y'] + list(expression_colors.keys())
     df = df[columns_to_keep]
+    
+    # 表情の割合データフレームを計算ます。
+    df_ratio = calc_expression_proportions(df, expression_colors)
 
     # 動画のフレームサイズを顔の座標データから決定
     frame_size = calc_frame_size(df, config['max_frame_size'])
@@ -241,13 +355,14 @@ def main():
     print(f'Scaled frame size: {frame_size}')
 
     # 動画を作成する
-    create_video(df, frame_size, config)
+    create_video(df, df_ratio, frame_size, config)
 
     # 終了メッセージ
     print(f'Video saved to {config["output_video_file"]}')
 
     # 作成した動画ファイルを再生します。
     if config.get('play_after_creation', False):
+        print('Playing the created video...')
         play_video(config['output_video_file'], config['fps'])
 
 
