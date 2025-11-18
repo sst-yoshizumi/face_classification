@@ -287,8 +287,17 @@ def create_video(df, df_ratio, frame_size, config):
             # 円を塗りつぶして描画
             # thickness=-1 （負の値）で塗りつぶし
             # 円の半径を top_left と bottom_right の中心に設定
-            radius = max((bottom_right[0] - top_left[0]) // 2, (bottom_right[1] - top_left[1]) // 2) * 3
+            radius = max((bottom_right[0] - top_left[0]) // 2, (bottom_right[1] - top_left[1]) // 2) * 2
             cv2.circle(frame, ((top_left[0] + bottom_right[0]) // 2, (top_left[1] + bottom_right[1]) // 2), radius, color, thickness=-1)
+            # 円の周辺を同じ色で、円の中心から遠くなるにつれて徐々に透過するように描画します。
+            for r in range(radius, radius + 50, 2):
+                alpha = max(0, 1 - (r - radius) / 50)
+                overlay_color = (int(color[0] * alpha + frame[((top_left[1] + bottom_right[1]) // 2), ((top_left[0] + bottom_right[0]) // 2), 0] * (1 - alpha)),
+                                 int(color[1] * alpha + frame[((top_left[1] + bottom_right[1]) // 2), ((top_left[0] + bottom_right[0]) // 2), 1] * (1 - alpha)),
+                                 int(color[2] * alpha + frame[((top_left[1] + bottom_right[1]) // 2), ((top_left[0] + bottom_right[0]) // 2), 2] * (1 - alpha)))
+                cv2.circle(frame, ((top_left[0] + bottom_right[0]) // 2, (top_left[1] + bottom_right[1]) // 2), r, overlay_color, thickness=1, lineType=cv2.LINE_AA)
+
+
 #            # 円の半径を大きくし、顔 ID や表情名が円と同じ色で重なるため読めなくなります。 ID と表情名は表示しないようにします。
 #            # 長方形の枠の上部に顔 ID を表示
 #            cv2.putText(frame, f'ID:{int(row["face id"])}', 

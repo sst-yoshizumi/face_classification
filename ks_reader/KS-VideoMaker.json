@@ -1,6 +1,6 @@
 {
     "input_file": "../data/2025-09-26-15-31-10-630-00_Ex.csv",
-    "output_video_file": "../data/emotion_video-neutral.mp4",
+    "output_video_file": "../data/emotion_video.mp4",
     "fps": 8,
     "max_frame_size": [1080, 768],
     "play_after_creation": true,
