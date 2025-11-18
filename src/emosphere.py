@@ -15,7 +15,7 @@ from utils.inference import detect_faces
 from utils.inference import draw_text
 from utils.inference import draw_bounding_box
 from utils.inference import draw_circle
-from utils.inference import draw_transparent_circle
+#from utils.inference import draw_transparent_circle
 from utils.inference import apply_offsets
 from utils.inference import load_detection_model
 from utils.preprocessor import preprocess_input
