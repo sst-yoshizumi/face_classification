@@ -386,8 +386,8 @@ while True:
 #draw#
 #        draw_bounding_box(face_coordinates, rgb_image, color)
         draw_circle(face_coordinates, bgr_image, bgr_color)
-        draw_text(face_coordinates, bgr_image, emotion_text, bgr_color, 0, -45, 1, 1)
-
+        # 表情のテキストは描画しないことにします。
+#        draw_text(face_coordinates, bgr_image, emotion_text, bgr_color, 0, -45, 1, 1)
 
 #        # ウィンドウ全体に太い枠を描画します。
 #        THICKNESS = 20
