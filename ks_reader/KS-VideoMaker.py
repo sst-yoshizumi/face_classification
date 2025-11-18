@@ -168,7 +168,6 @@ def draw_emotion_ratio_graph(frame, position, df_ratio_row, expression_colors):
     # df_ratio_row が Series 型の場合、 tolist() は使えないため、 DataFrame に変換します。
     if isinstance(df_ratio_row, pd.Series):
         df_ratio_row = df_ratio_row.to_frame().T
-#    emotion_columns = df_ratio_row.columns.tolist()
     
     # グラフのサイズを調節します。
     fig, ax = plt.subplots(figsize=(6, 0.4))  # 高さを小さくして細長く
@@ -265,6 +264,10 @@ def create_video(df, df_ratio, frame_size, config):
         frame[:] = config['background_color_bgr']
         # 現在のタイムスタンプに対応するデータを取得
         current_data = df[df['time stamp'] == time_stamp]
+        # 枠や円を小さい順に描画するように、 (bottom_right[0] - top_left[0]), (bottom_right[1] - top_left[1]) の大きさでソートします。
+        current_data = current_data.assign(width=current_data['bottomright_x'] - current_data['topleft_x'],
+                                           height=current_data['bottomright_y'] - current_data['topleft_y'])
+        current_data = current_data.sort_values(by=['height', 'width'])
         for _, row in current_data.iterrows():
             # 顔の座標を取得
             if pd.isnull(row['topleft_x']) or pd.isnull(row['topleft_y']) or pd.isnull(row['bottomright_x']) or pd.isnull(row['bottomright_y']):
@@ -279,16 +282,22 @@ def create_video(df, df_ratio, frame_size, config):
             dominant_expression = max(expressions, key=expressions.get)
             # 対応する色を取得
             color = config['expression_colors_bgr'][dominant_expression]
-            # 長方形を描画
-            cv2.rectangle(frame, top_left, bottom_right, color, config['rectangle_thickness'])
-            # 長方形の枠の上部に顔 ID を表示
-            cv2.putText(frame, f'ID:{int(row["face id"])}', 
-                        (top_left[0], top_left[1] - 8), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
-            # 長方形の枠の下に表情名を表示
-            cv2.putText(frame, dominant_expression, 
-                        (top_left[0], bottom_right[1] + 20), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+#            # 長方形を描画
+#            cv2.rectangle(frame, top_left, bottom_right, color, config['rectangle_thickness'])
+            # 円を塗りつぶして描画
+            # thickness=-1 （負の値）で塗りつぶし
+            # 円の半径を top_left と bottom_right の中心に設定
+            radius = max((bottom_right[0] - top_left[0]) // 2, (bottom_right[1] - top_left[1]) // 2) * 3
+            cv2.circle(frame, ((top_left[0] + bottom_right[0]) // 2, (top_left[1] + bottom_right[1]) // 2), radius, color, thickness=-1)
+#            # 円の半径を大きくし、顔 ID や表情名が円と同じ色で重なるため読めなくなります。 ID と表情名は表示しないようにします。
+#            # 長方形の枠の上部に顔 ID を表示
+#            cv2.putText(frame, f'ID:{int(row["face id"])}', 
+#                        (top_left[0], top_left[1] - 8), 
+#                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+#            # 長方形の枠の下に表情名を表示
+#            cv2.putText(frame, dominant_expression, 
+#                        (top_left[0], bottom_right[1] + 20), 
+#                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
             # フレームの右下にタイムスタンプを表示
             cv2.putText(frame, f'Time: {time_stamp:.3f}s', 
                         (frame_size[0] - 150, frame_size[1] - 10), 
