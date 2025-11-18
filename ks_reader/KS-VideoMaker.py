@@ -168,26 +168,37 @@ def draw_emotion_ratio_graph(frame, position, df_ratio_row, expression_colors):
     # df_ratio_row が Series 型の場合、 tolist() は使えないため、 DataFrame に変換します。
     if isinstance(df_ratio_row, pd.Series):
         df_ratio_row = df_ratio_row.to_frame().T
-    emotion_columns = df_ratio_row.columns.tolist()
+#    emotion_columns = df_ratio_row.columns.tolist()
     
-    # グラフのサイズを frame の横幅の 50%、高さは 5% に合わせます。
-    fig, ax = plt.subplots(figsize=(6, 1))
-    plt.subplots_adjust(left=0.2, right=0.95, top=0.8, bottom=0.2)
+    # グラフのサイズを調節します。
+    fig, ax = plt.subplots(figsize=(6, 0.4))  # 高さを小さくして細長く
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
 
     # 積み上げ横棒グラフを描画
-    df_ratio_row[emotion_columns].T.plot(
+    df_ratio_row.plot(
         kind='barh',
         stacked=True,
         ax=ax,
         colormap=expression_colors,
         legend=False
     )
-    plt.tight_layout()
+    # 横方向の長さを 0 ～ 1 に固定
+    ax.set_xlim(0, 1)
+    # 軸ラベルを非表示にします。
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    # 軸の枠線を非表示にします。
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    # 高さを小さくしたため、 tight_layout は不要
+#    plt.tight_layout()
 
     # 積み上げ横棒グラフを frame の position に描画
     # 画像として保存（メモリ上）
     buf = BytesIO()
-    plt.savefig(buf, format='png')
+    plt.savefig(buf, format='png', transparent=True)
     plt.close(fig)
     buf.seek(0)
 
@@ -240,7 +251,7 @@ def create_video(df, df_ratio, frame_size, config):
     # 作成中、進行状況を表示
     total_frames = len(time_stamps)
     print(f'Creating video with {total_frames} frames...')
-    print_interval = max(1, total_frames // 5)  # 5% ごとに表示
+    print_interval = max(1, total_frames // 20)  # 5% ごとに表示
 
     # 各フレームを生成
     for i, time_stamp in enumerate(time_stamps):
@@ -291,7 +302,7 @@ def create_video(df, df_ratio, frame_size, config):
         ratio_row = df_ratio.loc[time_stamp]
         # カラムデータがすべて NaN の場合は何もしません。
         if not ratio_row.isnull().all():
-            frame = draw_emotion_ratio_graph(frame, (50, 10), ratio_row, cmap)
+            frame = draw_emotion_ratio_graph(frame, (10, 4), ratio_row, cmap)
 
         # フレームを動画に追加
         video_writer.write(frame)
@@ -324,9 +335,6 @@ def calc_expression_proportions(df, expression_colors):
 
     # 感情の割合を計算します。
     df_ratio = df_sum.div(df_sum.sum(axis=1), axis=0)
-    # time stamp 以外の表情を表すヘッダにサフィックスを付けます。
-#    df_ratio = df_ratio.add_suffix('_ratio')
-#    df_ratio.rename(columns=lambda x: x + '_ratio' if x != 'time stamp' else x, inplace=True)
 
     return df_ratio
 
