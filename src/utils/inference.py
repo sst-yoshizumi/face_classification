@@ -43,7 +43,18 @@ def draw_circle(face_coordinates, image_array, color):
     center = (int(x + w / 2), int(y + h / 2))
 
     # Calculate radius
-    radius = int(0.5 * np.sqrt(w**2 + h**2))
+#    radius = int(0.5 * np.sqrt(w**2 + h**2))
+    radius = int(h * 0.5)
 
     # Draw cirle
     cv2.circle(image_array, center, radius, color, thickness=-1)
+
+    # 円の周辺を同じ色で、円の中心から遠くなるにつれて徐々に透過するように描画します。
+    for r in range(radius, radius + 100, 2):
+        # 円の中心から遠くなるにつれて透過度を上げる
+        alpha = max(0, 1 - (r - radius) / 100)
+        # 背景画像と透過色を合成
+        overlay_color = (int(color[0] * alpha + image_array[center[1], center[0], 0] * (1 - alpha)),
+                         int(color[1] * alpha + image_array[center[1], center[0], 1] * (1 - alpha)),
+                         int(color[2] * alpha + image_array[center[1], center[0], 2] * (1 - alpha)))
+        cv2.circle(image_array, center, r, overlay_color, thickness=1, lineType=cv2.LINE_AA)

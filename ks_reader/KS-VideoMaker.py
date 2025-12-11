@@ -1,7 +1,13 @@
 import pandas as pd
 import numpy as np
+# CUI で動作させる場合、 matplotlib のバックエンドを 'Agg' に設定します。
+# import matplotlib
+# matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import json
 import cv2
+from io import BytesIO
 
 # 表情データを時系列に記録した CSV ファイルを読み込み、
 # 顔の座標データの長方形を、表情に対応した色で表現し、動画を生成します。
@@ -146,12 +152,82 @@ def draw_legend(frame, config):
     return frame
 
 
-def create_video(df, frame_size, config):
+def draw_emotion_ratio_graph(frame, position, df_ratio_row, expression_colors):
+    '''
+    各時刻における感情割合を積み上げ横棒グラフで表示します。
+
+    Parameters:
+        frame (np.ndarray): 動画フレーム
+        position (tuple): グラフの表示位置 (x, y)
+        df_ratio_row (pd.DataFrame): 各時刻における感情割合のデータフレームの1行
+        expression_colors (dict): 表情に対応した色 (BGR)
+
+    Returns:
+        np.ndarray: グラフを描画したフレーム
+    '''
+    # df_ratio_row が Series 型の場合、 tolist() は使えないため、 DataFrame に変換します。
+    if isinstance(df_ratio_row, pd.Series):
+        df_ratio_row = df_ratio_row.to_frame().T
+    
+    # グラフのサイズを調節します。
+    fig, ax = plt.subplots(figsize=(6, 0.4))  # 高さを小さくして細長く
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+
+    # 積み上げ横棒グラフを描画
+    df_ratio_row.plot(
+        kind='barh',
+        stacked=True,
+        ax=ax,
+        colormap=expression_colors,
+        legend=False
+    )
+    # 横方向の長さを 0 ～ 1 に固定
+    ax.set_xlim(0, 1)
+    # 軸ラベルを非表示にします。
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    # 軸の枠線を非表示にします。
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    # 高さを小さくしたため、 tight_layout は不要
+#    plt.tight_layout()
+
+    # 積み上げ横棒グラフを frame の position に描画
+    # 画像として保存（メモリ上）
+    buf = BytesIO()
+    plt.savefig(buf, format='png', transparent=True)
+    plt.close(fig)
+    buf.seek(0)
+
+    # OpenCV で読み込み
+    img_array = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+    graph_img = cv2.imdecode(img_array, cv2.IMREAD_UNCHANGED)  # RGBA
+    h, w = graph_img.shape[:2]
+    
+    # グラフ画像を frame に合成（αチャンネル対応）
+    if graph_img.shape[2] == 4:
+        # RGBA → BGR + αマスク
+        bgr = graph_img[:, :, :3]
+        alpha = graph_img[:, :, 3] / 255.0
+
+        y, x = position[1], position[0]
+        for c in range(3):
+            frame[y:y+h, x:x+w, c] = (1 - alpha) * frame[y:y+h, x:x+w, c] + alpha * bgr[:, :, c]
+    else:
+        frame[y:y+h, x:x+w] = graph_img
+
+    return frame
+
+
+def create_video(df, df_ratio, frame_size, config):
     '''
     df のデータを元に動画を作成します。
     
     Parameters:
         df (pd.DataFrame): CSV ファイルのデータフレーム
+        df_ratio (pd.DataFrame): 表情の割合を含むデータフレーム
         frame_size (tuple): フレームサイズ (width, height)
         config (dict): 設定データ
     
@@ -165,15 +241,20 @@ def create_video(df, frame_size, config):
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # 'mp4v' は MP4 フォーマット用
     video_writer = cv2.VideoWriter(config['output_video_file'], fourcc, config['fps'], frame_size)
 
+    # expression_colors の値（BGR）を RGB に変換し、matplotlib 用カラーマップを作成
+    color_list = [tuple([c/255 for c in config['expression_colors_bgr'][emotion][::-1]]) for emotion in config['expression_colors_bgr']]
+    cmap = mcolors.ListedColormap(color_list)
+
     time_stamps = df['time stamp'].unique()
 
     # 作成中、進行状況を表示
     total_frames = len(time_stamps)
     print(f'Creating video with {total_frames} frames...')
-    print_interval = max(1, total_frames // 10)  # 10% ごとに表示
+    print_interval = max(1, total_frames // 20)  # 5% ごとに表示
 
     # 各フレームを生成
     for i, time_stamp in enumerate(time_stamps):
+        # 進行状況を表示
         if i % print_interval == 0:
             print(f'Progress: {i}/{total_frames} frames ({(i/total_frames)*100:.1f}%)')
 
@@ -183,6 +264,10 @@ def create_video(df, frame_size, config):
         frame[:] = config['background_color_bgr']
         # 現在のタイムスタンプに対応するデータを取得
         current_data = df[df['time stamp'] == time_stamp]
+        # 枠や円を小さい順に描画するように、 (bottom_right[0] - top_left[0]), (bottom_right[1] - top_left[1]) の大きさでソートします。
+        current_data = current_data.assign(width=current_data['bottomright_x'] - current_data['topleft_x'],
+                                           height=current_data['bottomright_y'] - current_data['topleft_y'])
+        current_data = current_data.sort_values(by=['height', 'width'])
         for _, row in current_data.iterrows():
             # 顔の座標を取得
             if pd.isnull(row['topleft_x']) or pd.isnull(row['topleft_y']) or pd.isnull(row['bottomright_x']) or pd.isnull(row['bottomright_y']):
@@ -197,22 +282,45 @@ def create_video(df, frame_size, config):
             dominant_expression = max(expressions, key=expressions.get)
             # 対応する色を取得
             color = config['expression_colors_bgr'][dominant_expression]
-            # 長方形を描画
-            cv2.rectangle(frame, top_left, bottom_right, color, config['rectangle_thickness'])
-            # 長方形の枠の上部に顔 ID を表示
-            cv2.putText(frame, f'ID:{int(row["face id"])}', 
-                        (top_left[0], top_left[1] - 8), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
-            # 長方形の枠の下に表情名を表示
-            cv2.putText(frame, dominant_expression, 
-                        (top_left[0], bottom_right[1] + 20), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+#            # 長方形を描画
+#            cv2.rectangle(frame, top_left, bottom_right, color, config['rectangle_thickness'])
+            # 円を塗りつぶして描画
+            # thickness=-1 （負の値）で塗りつぶし
+            # 円の半径を top_left と bottom_right の中心に設定
+            radius = max((bottom_right[0] - top_left[0]) // 2, (bottom_right[1] - top_left[1]) // 2) * 2
+            cv2.circle(frame, ((top_left[0] + bottom_right[0]) // 2, (top_left[1] + bottom_right[1]) // 2), radius, color, thickness=-1)
+            # 円の周辺を同じ色で、円の中心から遠くなるにつれて徐々に透過するように描画します。
+            for r in range(radius, radius + 50, 2):
+                alpha = max(0, 1 - (r - radius) / 50)
+                overlay_color = (int(color[0] * alpha + frame[((top_left[1] + bottom_right[1]) // 2), ((top_left[0] + bottom_right[0]) // 2), 0] * (1 - alpha)),
+                                 int(color[1] * alpha + frame[((top_left[1] + bottom_right[1]) // 2), ((top_left[0] + bottom_right[0]) // 2), 1] * (1 - alpha)),
+                                 int(color[2] * alpha + frame[((top_left[1] + bottom_right[1]) // 2), ((top_left[0] + bottom_right[0]) // 2), 2] * (1 - alpha)))
+                cv2.circle(frame, ((top_left[0] + bottom_right[0]) // 2, (top_left[1] + bottom_right[1]) // 2), r, overlay_color, thickness=1, lineType=cv2.LINE_AA)
+
+
+#            # 円の半径を大きくし、顔 ID や表情名が円と同じ色で重なるため読めなくなります。 ID と表情名は表示しないようにします。
+#            # 長方形の枠の上部に顔 ID を表示
+#            cv2.putText(frame, f'ID:{int(row["face id"])}', 
+#                        (top_left[0], top_left[1] - 8), 
+#                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1, cv2.LINE_AA)
+#            # 長方形の枠の下に表情名を表示
+#            cv2.putText(frame, dominant_expression, 
+#                        (top_left[0], bottom_right[1] + 20), 
+#                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
             # フレームの右下にタイムスタンプを表示
             cv2.putText(frame, f'Time: {time_stamp:.3f}s', 
                         (frame_size[0] - 150, frame_size[1] - 10), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
             # フレームの下段に表情の色の凡例を表示
             frame = draw_legend(frame, config)
+
+        # 感情割合グラフを表示
+        # time_stamp が無い場合は KeyError になりますが、 df_ratio の index に time_stamp が存在する前提です。
+        # df_ratio_row は Series 型（1行だけ該当）
+        ratio_row = df_ratio.loc[time_stamp]
+        # カラムデータがすべて NaN の場合は何もしません。
+        if not ratio_row.isnull().all():
+            frame = draw_emotion_ratio_graph(frame, (10, 4), ratio_row, cmap)
 
         # フレームを動画に追加
         video_writer.write(frame)
@@ -221,17 +329,49 @@ def create_video(df, frame_size, config):
     cv2.destroyAllWindows()
 
 
+def calc_expression_proportions(df, expression_colors):
+    '''
+    各時刻における表情の割合を計算します。
+    同時刻に複数の表情データがある場合は、それらを合計して割合を求めます。
+    
+    Parameters:
+        df (pd.DataFrame): CSV ファイルのデータフレーム
+        expression_colors (dict): 表情の色設定データ
+    
+    Returns:
+        pd.DataFrame: 各時刻における全員の表情の割合のデータフレーム
+    '''
+    # 感情データの種類
+#    emotion_columns = ['anger','contempt','disgust','fear','joy','sadness','surprise','sentimentality','confusion','neutral']
+    emotion_columns = [emotion for emotion, color in expression_colors.items()]
+
+    # time stamp と emotion_columns のみを抽出します。
+    df_sum = df[['time stamp'] + emotion_columns].copy()
+
+    # 同時刻に複数の表情データがある場合は、それらを表情ごとに合計します。
+    df_sum = df_sum.groupby('time stamp')[emotion_columns].sum()
+
+    # 感情の割合を計算します。
+    df_ratio = df_sum.div(df_sum.sum(axis=1), axis=0)
+
+    return df_ratio
+
+
 def main():
     # 設定を外部ファイルから読み出します。
     config = read_config('./KS-VideoMaker.json')
     expression_colors = config['expression_colors_bgr']
 
+    print('input file = ', config['input_file'])
     # CSV ファイルを読み込み
     df = pd.read_csv(config['input_file'])
 
-   # df から使わない列を削除
+    # df から使わない列を削除
     columns_to_keep = ['time stamp', 'face id', 'topleft_x', 'topleft_y', 'bottomright_x', 'bottomright_y'] + list(expression_colors.keys())
     df = df[columns_to_keep]
+    
+    # 表情の割合データフレームを計算ます。
+    df_ratio = calc_expression_proportions(df, expression_colors)
 
     # 動画のフレームサイズを顔の座標データから決定
     frame_size = calc_frame_size(df, config['max_frame_size'])
@@ -241,13 +381,14 @@ def main():
     print(f'Scaled frame size: {frame_size}')
 
     # 動画を作成する
-    create_video(df, frame_size, config)
+    create_video(df, df_ratio, frame_size, config)
 
     # 終了メッセージ
     print(f'Video saved to {config["output_video_file"]}')
 
     # 作成した動画ファイルを再生します。
     if config.get('play_after_creation', False):
+        print('Playing the created video...')
         play_video(config['output_video_file'], config['fps'])
 
 
